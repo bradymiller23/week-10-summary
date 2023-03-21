@@ -3,9 +3,46 @@ title: "week 10 notes"
 format: html
 ---
 
+```{r}
+library(ISLR2)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(readr)
+library(glmnet)
+library(caret)
+library(car)
+library(torch)
+```
+
+
 ## Tuesday March 21
 
+**BRING IN NOTES FROM LAST WEEK**
 
+Logistic Lost Function
+
+* AKA kl-divergence --> probability distributions match in areas where you have 
+  most data
+```{r}
+nn_bce_loss()
+```
+
+
+```r
+L2 <- function(x, y, model){
+  nn_bce_loss()(model(x),y)
+}
+
+logistic_reg_2 <- module()
+L2(x_tensor, y_tensor, logistic_reg_2)
+```
+
+
+```{r}
+
+
+```
 
 
 
