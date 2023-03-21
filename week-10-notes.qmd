@@ -15,12 +15,344 @@ library(car)
 library(torch)
 ```
 
+## Old Stuff
+
+```{r}
+# opening Boston data set which will be used in examples
+df <- Boston
+attach(Boston)
+```
+
+###### k-fold cross validation
+
+```{r}
+k <- 5
+folds <- sample(1:k, nrow(df), replace = T)
+
+df_folds <- list()
+
+# define list of data frame where every list has train and test
+for (i in 1:k){
+  df_folds[[i]] <- list()
+  df_folds[[i]]$train = df[which(folds == i), ]
+}
+```
+
+
+```{r}
+# finding the mean squared error for each fold variation
+kfold_mspe <- c()
+for (i in 1:k) {
+  model <- lm(medv ~ ., df_folds[[i]]$train)
+  y_hat <- predict(model, df_folds[[i]]$test)
+  kfold_mspe[i] <- mean((y_hat - df_folds[[i]]$test$medv)^2)
+}
+```
+
+```{r}
+make_folds <- function(df, k){
+  folds <- sample(1:k, nrow(df), replace = T)
+  df_folds <- list()
+  for (i in 1:k){
+    df_folds[[i]] <- list()
+    df_folds[[i]]$train = df[which(folds != i), ]
+    df_folds[[i]]$test = df[which(folds == i), ]
+  }
+  return(df_folds)
+}
+```
+
+
+```{r}
+# cross validation mean squared prediction error function
+cv_mspe <- function(formula, df_folds){
+  kfold_mspe <- c()
+  # going through each fold to generate predictions and find the error for each
+  for (i in 1:length(df_folds)){
+    model <- lm(formula, df_folds[[i]]$train)
+    y_hat <- predict(model, df_folds[[i]]$test)
+    kfold_mspe <- mean((y_hat - df_folds[[i]]$test$medv)^2)
+  }
+  return(mean(kfold_mspe))
+}
+```
+* This function can then be used to find the prediction error generated for a 
+given set of variables over a certain amount of folds. This can help you 
+determine which set of variables would be best to create the least error
+
+
+
+###### cross validation with caret package
+
+By using the caret package, we can write code to cross validate a dataset in
+much fewer lines as shown below
+
+```{r}
+# specifying you want to cross validate using 5 folds (the number)
+ctrl <- trainControl(method = 'cv', number = 5)
+ctrl
+```
+
+```{r}
+# creating model that uses linear regression model to predict med. house price
+# trControl attribute uses the ctrl object to specify 5-fold cross validation
+model <- train(medv ~ ., data = df, method = 'lm', trControl = ctrl)
+summary(model)
+```
+This model created by cross validation using the caret package indicates that 
+the age and indus variables are not significant in predicting the median house
+price of a given home. The $R^2$ value indicates that there is a somewhat strong
+positive correlation between the covariates and the outcome variable.
+
+```{r}
+# creates predictions for each piece of data in the Boston data set
+predictions <- predict(model,df)
+sample(predictions,10)
+```
+Above we show 5 randomly selected predictions made on the data set. Each row 
+number has the associated predicted median house value with it. 
+
+
+
+###### LASSO regression with caret package
+ 
+This deals with bias-variance trade off. As it states there is a trade off 
+between having more bias or more variance. By having a model that has more 
+variables, bias decreases but variance increases. Having too much variance can
+lead to overfitting data and create good performance on train data but bad 
+performance on test data. On the other hand, a model with only a few variables
+increases bias and reduces variance. Increasing bias can lead to creating a 
+model that underfits data, resulting in poor performance on both the train and 
+test data. This relates to LASSO as it is a form of variable selection, so you 
+want to make sure you are selecting the right amount of variables so you have a 
+balanced trade off between bias and variance
+
+```{r}
+ctrl <- trainControl(method = 'cv', number = 5)
+
+# Defining the tuning grid
+grid <- expand.grid(alpha = 1, lambda = seq(0, 0.1, by = 0.005))
+
+# Train the model using LASSO regression with cross validation
+lasso_fit <- train(medv ~ ., data = df, method = 'glmnet', trControl = ctrl,
+                   tuneGrid = grid, standardize = TRUE, family = 'gaussian')
+
+plot(lasso_fit)
+```
+This plot shows the mean squared error value for each regularization parameter 
+tried in the LASSO regression with the cross validation. From this, we can see 
+that the regularization parameter that minimizes the mean squared error value 
+is at about 0.03, so $\lambda$ should be 0.03 when doing LASSO regression.
+
+
+
+###### Why linear regression won't work for binary/categorical classification
+
+```{r}
+url <- 'https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.data'
+col_names <- c('id', 'diagnosis', paste0('feat', 1:30))
+df <- read_csv(
+  url, col_names, col_types = cols()
+) %>%
+  select(-id) %>%
+  mutate(outcome = ifelse(diagnosis == 'M', 1, 0)) %>%
+  select(-diagnosis)
+```
+
+
+```{r}
+reg_model <- lm(outcome ~ ., data = df)
+summary
+```
+Model summary indicates that most features are not significant
+
+
+```{r}
+n <- 100
+new_patients <- data.frame(matrix(rnorm(30 * n), nrow = n))
+colnames(new_patients) <- paste0('feat', 1:30)
+new_predictions <- predict(reg_model, newdata = new_patients, type = 'response')
+```
+
+```{r}
+print(new_predictions %>% head())
+```
+* The responses should be 0 or 1 (tumor is malignant or benign), but what we get
+  from this is values that don't make sense --> can't represent probability that
+  someones tumor is malignant
+ 
+* logistic regression would be better as this model can end up giving negative 
+  numbers which doesn't make sense (meaningless predictions)
+
+* linear regression for binary models will give you bad values for extrapolation
+
+
+```{r}
+boxplot(new_predictions)
+```
+The range of values going negative shows that there are bad/inaccurate responses
+
+
+
+
+
+###### Logistic regression using sigmoid function
+
+*odds = p/(1-p)
+
+*useful to interpret for binary responses
+
+*if p is between (0,1) then odds is between (0, infinity)
+
+*log-odds = log(odds)
+  1. log(p/(1-p))
+  1. log-odds takes values between (-infinity, infinity)
+  1. creates continuous scale which you can do linear regression on 
+     (transforming scale so you can do linear reg, and then transforming it back
+     to get value)
+
+* will specify a regression model and then use log-odds to get back what the 
+  probabilities are
+
+$$
+\frac{p}{1-p} = exp(\beta_0 + \beta_1 x_1)
+$$
+$$
+LogOdds(\beta(x)) = \beta_0 + \beta_1 x_1
+$$
+
+$$
+p(x) =  \frac{exp(\beta_0 + \beta_1 x_1)}{1+exp(\beta_0 + \beta_1 x_1)} = \frac{1}{1+exp(\beta_0 + \beta_1 x_1)}
+$$
+
+sigmoid function - logistic regression
+```{r}
+sigmoid <- \(x) 1/(1+exp(-x))
+curve(sigmoid, -100, 100, ylab = 'sigmoid(x)')
+```
+
+$$
+p(x) = sigmoid(\beta_0 + \beta_1 x_1) = \frac{1}{1+exp(-\beta_0 - \beta_1 x_1)}
+$$
+
+###### Interpreting Logistic Regression for Breast Cancer Data Set
+```{r}
+df <- df %>% mutate_at('outcome', factor)
+
+model <- glm(outcome ~., data =df, family = binomial())
+summary(model)
+```
+* Variables we initially thought were insignificant are now shown to be important
+* Feature 7 is not significant at all --> is actually significant, just very
+  collinear with another variable
+* Logistic regression suffers from multicollinearity 
+* There is no $R^2$ value for logistic regression as there is for linear
+  regression --> no line fitting x to y
+* Computes deviance instead (similar but different)
+* Also shows AIC
+
+
+```{r}
+set.seed(123)
+x <- rnorm(100)
+y <- rbinom(100, size = 1, prob=exp(0.5 + 0.8*x)/(1+exp(0.5 +0.8*x)))
+```
+
+
+```{r}
+model <- glm(y ~ x, family = binomial())
+summary(model)
+```
+The ground truth (model actually generating from) has intercept 0.5 and slope 0.8
+
+```{r}
+x_test <- -5.5
+sigmoid(coef(model)[1] + coef(model)[2] + x_test)
+
+
+predict(model, newdata = data.frame(x=x_test), type = 'response')
+```
+
+```{r}
+new_x <- seq(-2,2, by=0.1)
+p1 <- predict(model, data.frame(x=new_x))
+p2 <- predict(model, data.frame(x=new_x), type = 'response')
+
+boxplot(p1,p2)
+```
+
+```{r}
+X <- cbind(x)
+x_tensor <- torch_tensor(X, dtype = torch_float())
+y_tensor <- torch_tensor(y, dtype = torch_float())
+```
+
+```{r}
+module <- nn_module(
+  'logisti_regression',
+  initialize = function() {
+    self$fc1 <- nn_linear(1,1)
+    self$fc2 <- nn_sigmoid()
+  },
+  forward = function(x) {
+    x %>%
+      self$fc1() %>%
+      self$fc2()
+  }
+)
+```
+
+```{r}
+logistic_reg <- module()
+```
+
+```{r}
+y_pred <- logistic_reg(x_tensor)
+y_pred %>% head()
+```
+
+
+* neural network module --> in module you want to construct, there is some internal building step where you specify the structure
+* first layer in linear regression layer (input and output layer) (x and y are 1-dimensional)
+*can use module whenever you want to
+
+An appropriate loss function would be...
+```{r}
+L <- function(x,y,model){
+  y_pred <- model(x)
+  return(mean((y_pred - y)^2))
+}
+```
+
+
+```{r}
+logistic_reg_1 <- module()
+L(x_tensor, y_tensor, logistic_reg)
+```
+
+##### Optimization
+
+```{r}
+optimizer <- optim_adam(logistic_reg_1$parameters, lr=0.0001)
+
+epochs <- 10000
+for (i in 1:epochs){
+  loss <- L(x_tensor, y_tensor, logistic_reg_1)
+  optimizer$zero_grad()
+  loss$backward()
+  optimizer$step()
+  
+  if (i %% 1000 == 0) {
+    cat(sprintf('Epoch: %d, Loss: %.6f\n', i, loss$item()))
+  }
+}
+
+```
 
 ## Tuesday March 21
 
-**BRING IN NOTES FROM LAST WEEK**
 
-Logistic Lost Function
+#### Logistic Lost Function (Binary Cross Entropy)
 
 * AKA kl-divergence --> probability distributions match in areas where you have 
   most data
@@ -28,8 +360,7 @@ Logistic Lost Function
 nn_bce_loss()
 ```
 
-
-```r
+```{r}
 L2 <- function(x, y, model){
   nn_bce_loss()(model(x),y)
 }
@@ -38,14 +369,126 @@ logistic_reg_2 <- module()
 L2(x_tensor, y_tensor, logistic_reg_2)
 ```
 
-
 ```{r}
+optimizer <- optim_adam(logistic_reg_1$parameters, lr=0.0001)
 
+epochs <- 10000
+for (i in 1:epochs){
+  loss <- L2(x_tensor, y_tensor, logistic_reg_1)
+  optimizer$zero_grad()
+  loss$backward()
+  optimizer$step()
+  
+  if (i %% 1000 == 0) {
+    cat(sprintf('Epoch: %d, Loss: %.6f\n', i, loss$item()))
+  }
+}
 
 ```
 
+#### Decision Boundaries
+
+```{r}
+library(mlbench)
+library(nnet)
+library(class)
+```
+
+```{r}
+X <- t(replicate(100,runif(2)))
+y <- ifelse(apply(X,1,\(x)sum(x^1.5)) + 0.1 * rnorm(1000) <= 1, 0, 1) %>% as.factor()
+#y <- ifelse(X[,1] <= 1, 0, 1) %>% as.factor()
+col <- ifelse( y == 0, "blue", "red")
+
+plot(X[,1], X[,2], col=col)
+```
+
+```{r}
+df <- data.frame(y=y, x1 = X[,1], x2 = X[,2])
+model <- glm(y~., df, family = binomial())
+summary(model)
+
+```
+Slopes and intercepts are highly significant
+
+```{r}
+xnew <- data.frame(
+  x1 = rep(seq(0,1,length.out=50),50),
+  x2 = rep(seq(0,1,length.out=50),each = 50)
+)
+
+prob <- predict(model, xnew, type = 'response')
+decision <- ifelse(prob<0.5, 'blue', 'red')
+
+plot(xnew[,1], xnew[,2], col=decision, pch=22)
+points(X[,1], X[,2], col=col, pch=20)
+```
+Powerful way to look at classification problems and classification trees
 
 
+#### Confusion matrix
+```{r}
+idx <- sample(1:nrow(df), 100)
+train <- df[-idx,]
+test<- df[idx,]
+model <- glm(y~., train, family = binomial())
+probs <- predict(model, test, type = 'response')
+
+predicted <- ifelse(probs<0.5, 0, 1)
+expected <- test$y
+
+
+table(predicted, expected)
+```
+How model performs on unseen data set
+
+* 2x2 table for binary classification problem
+* columns are ground truth
+* first element = out of 71 people with y value 0 in test, model was able to 
+correctly predict 70 of them
+* out of 29 people in class 1, 27 were correctly predicted to be in class 1
+* take into consideration how many false negatives/false positives your model 
+  gives when determining its goodness of fit
+* want 0's in the bottom left and top right columns to indicate that the model
+  predicted the label of each data sample in the test set with 100% accuracy
+
+```{r}
+caret::confusionMatrix(data = as.factor(predicted), reference = as.factor(expected))
+```
+* gives confidence interval, p-value and other statistics that we can look at
+* sensitivity = [1,1] / [1,1] + [2,1] 
+* specificity = [2,2] / [1,2] + [2,2]
+
+
+
+####  Multinomial Class Logistic Regression
+
+* use softmax function for multinomial logistic regression
+ 1. exponentiating every element and then normalizing it to be between 0 and 1
+    by dividing it by sum of all the exponentiated classes
+ 2. weighted summation
+ 3. sum of all exponentiated elements is 1
+ 4. select max value to determine which class a point belongs to
+ 5. 0 <= exponentiated values <= 1 
+ 6. one-hot encoding argMax(x1,x2,...,xi,...,xk) = (0,0,...,1,...,0)
+ 
+* softmax(0,1) = (1/(1+exp(x), exp(x)/(1+exp(x))) = (1-sigmoid(x), sigmoid(x))
+ 
+
+```{r}
+# create a multinomial classification problem
+# want to classify a flower as one of 3 species based on petal width and petal length
+ 
+# fix one level as reference level and then make 2 different models 
+
+sample(1:3, size = 1000, replace = TRUE, prob=c(0.8,0.1,0.1))
+
+b <- c(-5,0,5)
+prob_function = \(x) exp(b*x) / sum(exp(b*x))
+
+x <- rnorm(10000)
+
+```
 
 
 ## Thursday March 23
