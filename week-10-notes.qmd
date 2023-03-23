@@ -465,6 +465,10 @@ caret::confusionMatrix(data = as.factor(predicted), reference = as.factor(expect
 
 
 ####  Multinomial Class Logistic Regression
+* generalization of logistic regression for more than two 'classes'
+* pick base category
+  1. constructs k-1 different logistic regression models for k categories of 
+     a response variable 
 
 * use softmax function for multinomial logistic regression
  1. exponentiating every element and then normalizing it to be between 0 and 1
@@ -490,6 +494,13 @@ b <- c(-5,0,5)
 prob_function = \(x) exp(b*x) / sum(exp(b*x))
 
 x <- rnorm(10000)
+y <- c()
+
+for (i in 1:length(x)){
+  y[i] <- sample(0:2, 1, prob = prob_function(x[i]))
+}
+
+cbind(x, y) %>% head
 ```
 ```r
 df <- iris
@@ -497,23 +508,149 @@ x <- df$Sepal.Length
 y <- df$Species
 ```
 
-```r
+```{r}
+data.frame(x=x, z = rep(0, length(x)), y=y) %>% ggplot(aes(x=x, y = z, color=factor(y))) + geom_point()
+``` 
+```{r}
 df <- data.frame(x=x, y=as.factor(y))
 df$y <- relevel(df$y, ref = '1')
 df$y
 ```
 
-```r
-data.frame(x=x, z = rep(0, length(x)), y=y) %>% ggplot(aes(x=x, y = z, color=factor(y))) + geom_point()
-``` 
-
-```r
+```{r}
 model <- nnet::multinom(y ~ x, df)
 summary(model)
 ```
+* coefficients in the first block are telling us that the intercept and slope for 
+  the regression model of 0 vs 1 and 1 vs 2. 
+* slope will flip signs when you switch the comparison order between 2 levels 
+  (change which is base level)
 
 ## Thursday March 23
  
+* logistic regression is useful when you want to see how a covariate is 
+  affecting a response variable
+```{r}
+# need to fix this
+X <- t(replicate(100,runif(2)))
+y <- ifelse(apply(X,1,\(x)sum(sign(x + 0.01 * rnorm(2)))) != 0, -1, 1) %>% as.factor()
+col <- ifelse(y == 0, 'blue','red')
 
+plot(X[,1], X[,2], col=col, pch = 19)
+
+
+X <- t(replicate(100,runif(2)))
+y <- ifelse(apply(X,1,\(x)sum(x^1.5)) + 0.1 * rnorm(1000) <= 1, 0, 1) %>% as.factor()
+#y <- ifelse(X[,1] <= 1, 0, 1) %>% as.factor()
+col <- ifelse( y == 0, "blue", "red")
+
+plot(X[,1], X[,2], col=col, pch = 19)
+```
+
+```{r}
+df <- data.frame(y=y, x1=X[,1], x2=X[,2])
+model <- glm(y ~ x1 + x2, df, family = binomial())
+f_logistic = \(x) predict(model, data.frame(x1=x[,1], x2 = x[,2]), type= 'response')
+```
+
+```{r}
+xnew <- cbind(
+  x1 = rep(seq(-1.1,1.1,length.out=50),50),
+  x2 = rep(seq(-1.1,1.1,length.out=50),each = 50)
+)
+```
+
+```{r}
+plt <- function(f, x) {
+  plot(x[,1], x[,2], col=ifelse(f(x) < 0.5, 'blue', 'red'), pch =22)
+  points(df$x1, df$x2, col=ifelse(y=='0', 'blue', 'red'), pch =22)
+}
+
+overview <- function(f){
+  predicted <- ifelse(f(df[,-1])<0.5, 0, 1)
+  actual <- df[,1]
+  table(predicted, actual)
+}
+
+plt(f_logistic, xnew)
+```
+
+
+
+#### Classification (Decision) Tree
+* tries to find splits in categories
+* hierarchical model that recursively partitions the data into smaller subsets 
+  based on the most informative features, and each partition is associated with 
+  a class label 
+  
+```{r}
+library(rpart)
+library(rpart.plot)
+```
+
+
+```{r}
+dtree <- rpart(y ~ x1 + x2, df, method = 'class')
+rpart.plot(dtree)
+```
+
+```{r}
+f_dtree <- \(x) as.numeric(predict(dtree, data.frame(x1 = x[,1], x2=x[,2]), ttype = 'class')) - 1
+plt(f_dtree, xnew)
+```
+
+```{r}
+overview(f_dtree)
+```
+
+#### Support Vector Machine
+
+```{r}
+n <- 750
+X <- t(replicate(n,2 * runif(2)-1))
+y <- ifelse(apply(X,1, \(x) sum(abs(x))) + 0.1 * rnorm(n) <= 1, 0, 1) %>% as.factor()
+col <- ifelse(y==0, 'blue', 'red') 
+df <- data.frame(y=y, x1=X[,1], x2=X[,2]) 
+  
+plot(X[,1], X[,2], col=col, pch=19)
+```
+
+```{r}
+library(e1071)
+```
+
+```{r}
+svm_model <- svm(y~x1+x2, df, kernel = 'radial')
+summary(svm_model)
+```
+
+```{r}
+f_svm <- \(x) predict(svm_model, x) %>% as.factor() - 1
+plt(f_svm, xnew)
+```
+
+```{r}
+overview(f_svm)
+```
+
+
+
+#### Nueral Network with 1 hidden layer
+
+```{r}
+module <- nn_module(
+  initialize = function() {
+    self$f <- nn_linear(2,20)
+    self$g <- nn_linear(2,1)
+    self$h <- nn_sigmoid()
+  },
+  forward = function(x) {
+    x %>%
+      self$f() %>%
+      self$g() %>%
+      self$h()
+  }
+)
+```
 
 
