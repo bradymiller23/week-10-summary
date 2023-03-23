@@ -349,7 +349,10 @@ for (i in 1:epochs){
 
 ```
 
-## Tuesday March 21
+
+
+
+# Tuesday March 21
 
 
 #### Logistic Lost Function (Binary Cross Entropy)
@@ -487,8 +490,30 @@ b <- c(-5,0,5)
 prob_function = \(x) exp(b*x) / sum(exp(b*x))
 
 x <- rnorm(10000)
-
+```
+```r
+df <- iris
+x <- df$Sepal.Length
+y <- df$Species
 ```
 
+```r
+df <- data.frame(x=x, y=as.factor(y))
+df$y <- relevel(df$y, ref = '1')
+df$y
+```
+
+```r
+data.frame(x=x, z = rep(0, length(x)), y=y) %>% ggplot(aes(x=x, y = z, color=factor(y))) + geom_point()
+``` 
+
+```r
+model <- nnet::multinom(y ~ x, df)
+summary(model)
+```
 
 ## Thursday March 23
+ 
+
+
+
